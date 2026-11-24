@@ -78,9 +78,8 @@ problema encaixa nas três fases do modelo: cada processo atualiza a sua faixa
 de linhas (\emph{processamento local}), todos decidem juntos se $\delta$ já
 está abaixo da tolerância (\emph{verificação coletiva}) e, se não, trocam com
 os vizinhos de cima e de baixo as linhas de borda de que a próxima iteração
-precisa (\emph{troca para convergência}). Ao contrário da ordenação do
-pseudocódigo, todo o trabalho local é um laço de pontos independentes,
-que as threads OpenMP dividem sem sincronização.
+precisa (\emph{troca para convergência}). O trabalho local é um laço de
+pontos independentes, que as threads dividem sem sincronização.
 
 \section{Implementação: diretivas MPI e OpenMP}
 Um fonte (\texttt{jacobi.c}) gera as três versões: \texttt{gcc} dá o
@@ -93,8 +92,8 @@ $\delta$ local; (2) \texttt{MPI\_Allreduce(MPI\_MAX)} dá a todos o
 $\delta$ global, e todos param na mesma iteração. Ele faz o papel dos $np$
 \texttt{MPI\_Bcast} do pseudocódigo em uma coletiva de $\log_2 np$ etapas;
 (3) dois \texttt{MPI\_Sendrecv} trocam a primeira linha com o vizinho de cima
-e a última com o de baixo (\texttt{MPI\_PROC\_NULL} nas pontas). O
-\texttt{Sendrecv} evita o impasse de todos enviarem antes de receber.
+e a última com o de baixo (\texttt{MPI\_PROC\_NULL} nas pontas), sem
+impasse.
 
 \textbf{Versão híbrida.} O modelo não muda: muda quem faz a fase 1. Um
 processo por nó (ou por socket) recebe uma faixa 16 (ou 8) vezes maior, e
@@ -113,7 +112,7 @@ tolerância ($10^{-6}$) é verificada a cada iteração, mas não é atingida, d
 modo que todas as versões fazem o mesmo trabalho. Cada linha de borda tem
 64\,KiB. No híbrido com 4 processos, cada faixa tem 2048 linhas, ou 128 por
 thread com 16 threads: carga de sobra para dividir entre as threads.
-\pend{tempo do sequencial} Atlântica, 4 nós exclusivos (2$\times$ Xeon E5520
+O sequencial leva 138,9\,s. Atlântica, 4 nós exclusivos (2$\times$ Xeon E5520
 por nó: 2 sockets $\times$ 4 núcleos $\times$ 2 HT), gcc 9.4.0 \texttt{-O2},
 Open MPI 4.1.1. MPI puro e híbrido são comparados com o mesmo total de
 núcleos e as mesmas CPUs: com 8, um rank (ou thread) por socket; com 16, dois;
@@ -125,17 +124,40 @@ resultado (iterações, $\delta$ bit a bit e soma das temperaturas) é igual ao
 sequencial em todas as execuções.
 
 \section{Escalabilidade forte}
-\pend{Tab.~1 e Fig.~1: S e E de MPI puro e híbrido em 4, 8, 16, 32 e 64
-núcleos; onde as curvas se separam; ganho ou perda com o HT}
+Com 4 núcleos (1 por nó) as duas versões dão $S = 3{,}83$ ($E = 0{,}96$);
+com 8 (1 por socket), 7,16 no MPI puro e 7,02 no híbrido. Daí em diante as
+curvas achatam (Tab.~1, Fig.~1): com 16, 32 e 64 núcleos o MPI puro chega a
+8,00, 8,67 e 8,51, e o híbrido com 1 processo por nó a 7,70, 7,51 e 7,47; a
+eficiência cai a 0,13. O HT não ajuda (64 contra 32), e o híbrido com 1
+processo por socket fica igual ao de 1 por nó (7,57 e 7,50). O híbrido com 1
+thread repete o MPI com 4 processos (36,32 contra 36,26\,s): a medição é justa.
 
-\section{Análise: por que MPI puro e híbrido diferem}
-\pend{Fig.~2: fração do tempo em cálculo, Allreduce e bordas. Pontos a
-cobrir: (a) número de mensagens por iteração, $2(np{-}1)$: 126 no MPI com
-64 contra 6 no híbrido 4$\times$16; (b) o Jacobi é limitado pela banda de
-memória (16--24\,B por ponto), então acima de 2 núcleos por socket o ganho
-cai nas duas versões; (c) o tempo no Allreduce inclui a espera pelo processo
-mais lento (desbalanceamento); (d) 1 processo por nó $\times$ 1 por socket
-(NUMA)}
+\section{Análise dos resultados}
+\textbf{O gargalo é a memória, não o processador.} Cada ponto faz 5
+operações e move $\approx$24\,B (lê a linha nova, escreve o resultado e a
+leitura que precede a escrita). Um núcleo sozinho já faz 241\,M pontos/s,
+$\approx$5,8\,GB/s. Com 4 núcleos por socket (32 no total) o cálculo leva
+14,9\,s contra 16,5\,s com 1 por socket (8 no total): 4$\times$ os núcleos,
+10\,\% a menos de tempo. O barramento de cada socket satura com cerca de um
+núcleo, e o speed-up acompanha o número de controladores de memória em uso
+(4 sockets $\to$ 3,8; 8 $\to$ 7,2), não o de núcleos. O HT divide o mesmo
+barramento e por isso não muda nada.
+
+\textbf{Menos mensagens não bastam.} O híbrido troca 6 mensagens por iteração
+contra 126 do MPI com 64 processos, mas o volume que cruza a rede é o mesmo
+(3 fronteiras entre nós, $2 \times 64$\,KiB cada), e as trocas dentro do nó
+são cópias em memória compartilhada, baratas. O que pesa é quem espera a
+rede. No híbrido, os processos 1 e 2 têm vizinhos em outros nós dos dois
+lados e fazem as duas trocas pela rede em série: $\approx$4\,ms por iteração
+(2,0\,s de bordas em 500 iterações, o mesmo em todas as configurações
+$4 \times t$). No MPI puro, cada processo de fronteira tem só um vizinho em
+outro nó. Como o \texttt{Allreduce} sincroniza todos a cada iteração, essa
+espera entra no caminho crítico: verificação + bordas somam 1,1\,s no MPI
+com 32 e 2,7\,s no híbrido $4 \times 8$ (Fig.~2). O híbrido ainda calcula
+$\approx$5\,\% mais devagar (15,8 contra 14,9\,s), provavelmente pela barreira
+implícita no fim de cada laço OpenMP, que espera a thread mais lenta. O
+desbalanceamento entre processos é pequeno (cálculo máximo até 4,6\,\% acima
+da média).
 
 \section{Uso de IA}
 % CONFERIR com o grupo antes de entregar: descrever exatamente o que foi feito
@@ -144,12 +166,19 @@ Usamos o \textbf{Claude Code} (Anthropic, modelo Claude Opus 5.5).
 \emph{Código}: escreveu o \texttt{jacobi.c} (as três versões), os testes de
 corretude, os scripts de medição e análise e o mapeamento de processos e
 threads, que conferiu num simulador de topologia do Open MPI.
-\emph{Relatório}: redigiu as Seç.~1--3 e o Anexo A. \pend{o que o grupo
-escreveu/revisou}. O grupo escolheu o problema, rodou os experimentos no
-cluster e conferiu os resultados e o texto.
+\emph{Relatório}: redigiu o texto e o Anexo A a partir dos números medidos.
+O grupo escolheu o problema entre as opções sugeridas, rodou os experimentos
+no cluster e revisou os resultados e o texto.
 
 \section{Conclusão}
-\pend{qual versão escala melhor, por quê e quando o híbrido compensa}
+Neste problema e nesta máquina, a banda de memória limita as duas versões:
+o speed-up para perto de 8,7 com os 8 sockets, e nem o HT nem o OpenMP mudam
+isso. O MPI puro foi um pouco melhor (8,67 contra 7,51 com 32 núcleos)
+porque cada processo de fronteira espera uma troca pela rede, e não duas.
+O híbrido deve compensar com muito mais nós (o \texttt{Allreduce} e o número
+de mensagens crescem com $np$), com um cálculo mais pesado por ponto, ou
+sobrepondo a troca de bordas ao cálculo do interior da faixa, o que o OpenMP
+permite reservando uma thread para a comunicação.
 
 % ============================ ANEXO (pag. 2) ================================
 \onecolumn
