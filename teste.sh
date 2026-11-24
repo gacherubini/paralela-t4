@@ -42,11 +42,15 @@ ref=$(./jacobi_seq -n 1000 -i 20 -t 0 | tail -1)
 confere "hib np=4 t=3 n=1000" "$ref" \
     "$(OMP_NUM_THREADS=3 $MPIRUN -x OMP_NUM_THREADS -np 4 ./jacobi_hib -n 1000 -i 20 -t 0 | tail -1)"
 
-# Erros esperados: N < np aborta; argumento faltando sai com erro e sem saida.
+# Erros esperados: N < np aborta; argumento invalido sai com erro. Criterio: o
+# programa NAO pode imprimir linha de resultado. (O codigo de saida e o texto
+# do MPI_Abort variam com a versao do Open MPI e com o Slurm: nao servem.)
 deve_falhar() {   # rotulo comando...
-    local rot=$1; shift
-    if out=$(timeout 60 "$@" 2>/dev/null) || [ -n "$out" ]; then
-        echo "FALHOU $rot (deveria dar erro)"; falhas=$((falhas + 1))
+    local rot=$1 out; shift
+    out=$(timeout 60 "$@" 2>&1)
+    if echo "$out" | grep -qE '^(seq|mpi|hib);'; then
+        echo "FALHOU $rot (deveria dar erro, mas imprimiu resultado)"
+        echo "$out" | head -5 | sed 's/^/    /'; falhas=$((falhas + 1))
     else echo "OK     $rot (erro, como esperado)"; fi
 }
 deve_falhar "mpi np=4 n=3 (N < np)" $MPIRUN -np 4 ./jacobi_mpi -n 3 -i 10 -t 0
