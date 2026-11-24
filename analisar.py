@@ -22,7 +22,7 @@ MARCA = {"mpi": "o", "hib-no": "s", "hib-sock": "^"}
 
 def ler():
     linhas = []
-    with open(os.path.join(PASTA, "tempos.csv")) as f:
+    with open(os.path.join(PASTA, "tempos.csv"), encoding="utf-8") as f:
         for r in csv.DictReader(f, delimiter=";"):
             for k in ("procs", "threads", "n", "iter", "reps"):
                 r[k] = int(r[k])
@@ -67,9 +67,9 @@ def main():
                        f"{100 * r['halo'] / tot:.0f} \\\\")
     texto = "\n".join(saida)
     print(texto)
-    with open(os.path.join(PASTA, "tabelas.txt"), "w") as f:
+    with open(os.path.join(PASTA, "tabelas.txt"), "w", encoding="utf-8") as f:
         f.write(texto + "\n")
-    with open(os.path.join(PASTA, "tab_escala.tex"), "w") as f:
+    with open(os.path.join(PASTA, "tab_escala.tex"), "w", encoding="utf-8") as f:
         f.write("\\begin{tabular}{lrrrrrrc}\n\\toprule\n"
                 "Versão & proc. & thr. & núcleos & tempo (s) & S & E & calc / verif / bordas (\\%) \\\\\n\\midrule\n"
                 f"Sequencial & 1 & 1 & 1 & {t1:.2f} & 1,00 & 100\\% & 100 / 0 / 0 \\\\\n"
@@ -108,6 +108,7 @@ def main():
         ax.grid(alpha=0.3)
     ax1.set_ylabel("Speed-up")
     ax1.set_title("Speed-up (escalabilidade forte)")
+    ax1.set_ylim(0, 17)   # o ideal vai a 64; cortado para as curvas medidas aparecerem
     ax2.set_ylabel("Eficiência")
     ax2.set_title("Eficiência")
     ax2.set_ylim(0, 1.15)
