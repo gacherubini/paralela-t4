@@ -38,8 +38,8 @@ bit) e a mesma `soma` que o sequencial.
 ```bash
 ssh cp32020@atlantica.lad.pucrs.br       # via sparta se estiver fora da PUCRS
 git clone https://github.com/gacherubini/paralela-t4 && cd paralela-t4
-make && make teste                       # compila e confere (rápido, ok na hospedeira)
-sbatch job.sh                            # 4 nós exclusivos, ~30-45 min
+make                                     # só compila na hospedeira (NÃO executar lá)
+sbatch job.sh                            # 4 nós exclusivos: teste + mapa + medição, ~30-45 min
 squeue -u $USER                          # acompanhar a fila
 tail -f slurm-*.out                      # ver saindo
 ```

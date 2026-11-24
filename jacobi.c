@@ -79,15 +79,22 @@ static void uso(const char *prog)
  * ficam a 0. Feita com o mesmo escalonamento estatico do calculo para que, no
  * hibrido, cada pagina de memoria seja tocada primeiro pela thread que vai
  * usa-la (first touch: a pagina fica no banco de memoria do socket dela). */
-static void inicializa(double *a, int L, int N, int ini)
+static void inicializa_linha(double *a, int i, int N, int ini)
 {
     const int W = N + 2;
+    double v = (ini - 1 + i == 0) ? QUENTE : 0.0;
+    for (int j = 0; j < W; j++)
+        a[(size_t)i * W + j] = (j == 0 || j == W - 1) ? 0.0 : v;
+}
+
+static void inicializa(double *a, int L, int N, int ini)
+{
+    /* linhas 1..L: mesmo laco (mesmos limites) do passo(), logo mesma divisao */
     #pragma omp parallel for schedule(static)
-    for (int i = 0; i <= L + 1; i++) {
-        double v = (ini - 1 + i == 0) ? QUENTE : 0.0;
-        for (int j = 0; j < W; j++)
-            a[(size_t)i * W + j] = (j == 0 || j == W - 1) ? 0.0 : v;
-    }
+    for (int i = 1; i <= L; i++)
+        inicializa_linha(a, i, N, ini);
+    inicializa_linha(a, 0, N, ini);       /* linhas fantasma */
+    inicializa_linha(a, L + 1, N, ini);
 }
 
 /* Fase 1: processamento local. Uma iteracao de Jacobi sobre as linhas 1..L.

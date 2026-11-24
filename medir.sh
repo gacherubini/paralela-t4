@@ -45,8 +45,10 @@ roda() {
         flags+=(--map-by ppr:1:node --bind-to none)
         if [ "$t" -le 8 ]; then env+=(OMP_PLACES=cores); else env+=(OMP_PLACES=threads); fi
         env+=(OMP_PROC_BIND=close)
-    else                       # hibrido, 1 rank por socket
-        flags+=(--map-by ppr:1:socket --bind-to socket)
+    else                       # hibrido, 1 rank por socket, preso aos 4 nucleos (8 HT) dele
+        # (--bind-to socket deixava o rank SEM afinidade no Open MPI 4: as threads
+        #  dos dois ranks do no caiam nos mesmos nucleos. pe=4 prende de fato.)
+        flags+=(--map-by ppr:1:socket:pe=4 --bind-to core)
         if [ "$t" -le 4 ]; then env+=(OMP_PLACES=cores); else env+=(OMP_PLACES=threads); fi
         env+=(OMP_PROC_BIND=close)
     fi
@@ -89,7 +91,8 @@ if [ "$MODO" = mapa ]; then
     exit 0
 fi
 
-[ -s "$OUT" ] || echo 'config;versao;procs;threads;n;iter;tempo;calc;red;halo;calc_max;delta;soma;reps;tmin;tmax' > "$OUT"
+[ -s "$OUT" ] && mv "$OUT" "$OUT.$(date +%Y%m%d-%H%M%S)"   # rodada nova nao se mistura com a velha
+echo 'config;versao;procs;threads;n;iter;tempo;calc;red;halo;calc_max;delta;soma;reps;tmin;tmax' > "$OUT"
 echo "N=$N IT=$IT TOL=$TOL REPS=$REPS  ($(date))"
 for c in "${CONFIGS[@]}"; do
     set -- $c

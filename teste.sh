@@ -33,4 +33,24 @@ for caso in "203 300 0" "40 100000 1e-3"; do
     done
 done
 
+# Casos de borda: faixas de 1 linha (N = np) e mais threads do que linhas.
+ref=$(./jacobi_seq -n 7 -i 50 -t 0 | tail -1)
+confere "mpi np=7 n=7 (1 linha por faixa)" "$ref" "$($MPIRUN -np 7 ./jacobi_mpi -n 7 -i 50 -t 0 | tail -1)"
+confere "hib np=7 t=4 n=7 (threads > linhas)" "$ref" \
+    "$(OMP_NUM_THREADS=4 $MPIRUN -x OMP_NUM_THREADS -np 7 ./jacobi_hib -n 7 -i 50 -t 0 | tail -1)"
+ref=$(./jacobi_seq -n 1000 -i 20 -t 0 | tail -1)
+confere "hib np=4 t=3 n=1000" "$ref" \
+    "$(OMP_NUM_THREADS=3 $MPIRUN -x OMP_NUM_THREADS -np 4 ./jacobi_hib -n 1000 -i 20 -t 0 | tail -1)"
+
+# Erros esperados: N < np aborta; argumento faltando sai com erro e sem saida.
+deve_falhar() {   # rotulo comando...
+    local rot=$1; shift
+    if out=$(timeout 60 "$@" 2>/dev/null) || [ -n "$out" ]; then
+        echo "FALHOU $rot (deveria dar erro)"; falhas=$((falhas + 1))
+    else echo "OK     $rot (erro, como esperado)"; fi
+}
+deve_falhar "mpi np=4 n=3 (N < np)" $MPIRUN -np 4 ./jacobi_mpi -n 3 -i 10 -t 0
+deve_falhar "seq sem -i" ./jacobi_seq -n 10 -t 0
+deve_falhar "seq tol negativa" ./jacobi_seq -n 10 -i 5 -t -1
+
 [ "$falhas" -eq 0 ] && echo "TODOS OS TESTES PASSARAM" || { echo "$falhas FALHA(S)"; exit 1; }
