@@ -1,0 +1,8 @@
+jacobi_seq
+jacobi_mpi
+jacobi_hib
+slurm-*.out
+__pycache__/
+relatorio/*.aux
+relatorio/*.log
+relatorio/*.out
