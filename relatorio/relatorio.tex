@@ -27,13 +27,13 @@
 \usepackage{amsmath}
 
 \setlength{\parindent}{0pt}
-\setlength{\parskip}{2pt}
+\setlength{\parskip}{0pt}
 \setlength{\columnsep}{6mm}
 \pagestyle{empty}
 \raggedbottom
 \makeatletter
 \renewcommand\section{\@startsection{section}{1}{0pt}%
-  {0.8ex plus .2ex minus .2ex}{0.3ex}{\normalsize\bfseries}}
+  {0.6ex plus .2ex minus .2ex}{0.2ex}{\normalsize\bfseries}}
 \makeatother
 
 \newcommand{\pend}[1]{\textcolor{red}{\textbf{[#1]}}}
@@ -84,25 +84,25 @@ pontos independentes, que as threads dividem sem sincronização.
 \section{Implementação: diretivas MPI e OpenMP}
 Um fonte (\texttt{jacobi.c}) gera as três versões: \texttt{gcc} dá o
 sequencial; \texttt{mpicc -DPARALELO}, o MPI puro; e o mesmo com
-\texttt{-fopenmp}, o híbrido. As $N$ linhas são divididas em faixas
+\texttt{-fopenmp}, o híbrido (l.~= linha do \texttt{jacobi.c}, Anexo B). As $N$ linhas são divididas em faixas
 contíguas de $\lfloor N/np \rfloor$ ou $\lceil N/np \rceil$ linhas, geradas no
-próprio processo, cada uma com uma linha fantasma (\emph{halo}) acima e outra
-abaixo. Cada iteração: (1) \texttt{passo()} atualiza a faixa e devolve o
-$\delta$ local; (2) \texttt{MPI\_Allreduce(MPI\_MAX)} dá a todos o
-$\delta$ global, e todos param na mesma iteração. Ele faz o papel dos $np$
+próprio processo (l.~201--216), cada uma com uma linha fantasma (\emph{halo}) acima e outra
+abaixo. Cada iteração (laço das l.~234--258): (1) \texttt{passo()} (l.~104--122)
+atualiza a faixa e devolve o $\delta$ local; (2) \texttt{MPI\_Allreduce(MPI\_MAX)} dá a todos o
+$\delta$ global (l.~245), e todos param na mesma iteração (l.~251). Ele faz o papel dos $np$
 \texttt{MPI\_Bcast} do pseudocódigo em uma coletiva de $\log_2 np$ etapas;
 (3) dois \texttt{MPI\_Sendrecv} trocam a primeira linha com o vizinho de cima
-e a última com o de baixo (\texttt{MPI\_PROC\_NULL} nas pontas), sem
-impasse.
+e a última com o de baixo (\texttt{MPI\_PROC\_NULL} nas pontas, l.~220--221), sem
+impasse (l.~130--141).
 
 \textbf{Versão híbrida.} O modelo não muda: muda quem faz a fase 1. Um
 processo por nó (ou por socket) recebe uma faixa 16 (ou 8) vezes maior, e
-\texttt{\#pragma omp parallel for schedule(static) reduction(max:dmax)} divide
-as linhas entre as threads; a redução do OpenMP combina o $\delta$ das
+\texttt{\#pragma omp parallel for schedule(static) reduction(max:dmax)} (l.~108)
+divide as linhas entre as threads; a redução do OpenMP combina o $\delta$ das
 threads antes da redução do MPI. Só a thread principal chama MPI, fora das
 regiões paralelas (\texttt{MPI\_Init\_thread} com
-\texttt{MPI\_THREAD\_FUNNELED}). A inicialização usa o mesmo laço e o mesmo
-escalonamento, para que cada página de memória seja tocada primeiro pela
+\texttt{MPI\_THREAD\_FUNNELED}, l.~169). A inicialização (l.~90--98) usa o mesmo laço e o
+mesmo escalonamento, para que cada página de memória seja tocada primeiro pela
 thread que vai usá-la (\emph{first touch}) e fique no banco de memória do
 socket dela.
 
@@ -118,7 +118,8 @@ Open MPI 4.1.1. MPI puro e híbrido são comparados com o mesmo total de
 núcleos e as mesmas CPUs: com 8, um rank (ou thread) por socket; com 16, dois;
 com 32, todos os núcleos; com 64, também o HT. Processos e threads ficam
 fixos (\texttt{--map-by ppr}, \texttt{OMP\_PLACES}/\texttt{OMP\_PROC\_BIND};
-mapa conferido com \texttt{-m}). Tempo do laço principal, mediana de 3;
+mapa conferido com \texttt{-m}). Tempo do laço principal, mediana de 3
+(variação entre repetições $\le 2{,}3$\,\%);
 $S = T_{seq}/T$ e $E = S/(\text{processos} \times \text{threads})$. O
 resultado (iterações, $\delta$ bit a bit e soma das temperaturas) é igual ao
 sequencial em todas as execuções.
@@ -148,9 +149,9 @@ contra 126 do MPI com 64 processos, mas o volume que cruza a rede é o mesmo
 (3 fronteiras entre nós, $2 \times 64$\,KiB cada), e as trocas dentro do nó
 são cópias em memória compartilhada, baratas. O que pesa é quem espera a
 rede. No híbrido, os processos 1 e 2 têm vizinhos em outros nós dos dois
-lados e fazem as duas trocas pela rede em série: $\approx$4\,ms por iteração
-(2,0\,s de bordas em 500 iterações, o mesmo em todas as configurações
-$4 \times t$). No MPI puro, cada processo de fronteira tem só um vizinho em
+lados e fazem as duas trocas pela rede em série: a troca de bordas custa em
+média $\approx$4\,ms por iteração por processo (2,0\,s em 500 iterações, o
+mesmo em todas as configurações $4 \times t$). No MPI puro, cada processo de fronteira tem só um vizinho em
 outro nó. Como o \texttt{Allreduce} sincroniza todos a cada iteração, essa
 espera entra no caminho crítico: verificação + bordas somam 1,1\,s no MPI
 com 32 e 2,7\,s no híbrido $4 \times 8$ (Fig.~2). O híbrido ainda calcula
@@ -161,13 +162,14 @@ da média).
 
 \section{Uso de IA}
 % CONFERIR com o grupo antes de entregar: descrever exatamente o que foi feito
-% pela ferramenta e o que foi feito por cada integrante.
+% pela ferramenta e o que foi feito por cada integrante (e se os slides da
+% apresentacao tambem foram feitos com a ferramenta).
 Usamos o \textbf{Claude Code} (Anthropic, modelo Claude Opus 5.5).
 \emph{Código}: escreveu o \texttt{jacobi.c} (as três versões), os testes de
 corretude, os scripts de medição e análise e o mapeamento de processos e
 threads, que conferiu num simulador de topologia do Open MPI.
 \emph{Relatório}: redigiu o texto e o Anexo A a partir dos números medidos.
-O grupo escolheu o problema entre as opções sugeridas, rodou os experimentos
+O grupo escolheu o problema, rodou os experimentos
 no cluster e revisou os resultados e o texto.
 
 \section{Conclusão}
@@ -177,8 +179,9 @@ isso. O MPI puro foi um pouco melhor (8,67 contra 7,51 com 32 núcleos)
 porque cada processo de fronteira espera uma troca pela rede, e não duas.
 O híbrido deve compensar com muito mais nós (o \texttt{Allreduce} e o número
 de mensagens crescem com $np$), com um cálculo mais pesado por ponto, ou
-sobrepondo a troca de bordas ao cálculo do interior da faixa, o que o OpenMP
-permite reservando uma thread para a comunicação.
+esperando menos a rede: com \texttt{MPI\_Isend}/\texttt{MPI\_Irecv}, as duas
+trocas dos processos do meio podem correr juntas, e uma thread dedicada à
+comunicação sobreporia as bordas ao cálculo do interior.
 
 % ============================ ANEXO (pag. 2) ================================
 \onecolumn

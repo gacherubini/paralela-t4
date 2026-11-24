@@ -72,7 +72,7 @@ def main():
     with open(os.path.join(PASTA, "tab_escala.tex"), "w", encoding="utf-8") as f:
         f.write("\\begin{tabular}{lrrrrrrc}\n\\toprule\n"
                 "Versão & proc. & thr. & núcleos & tempo (s) & S & E & calc / verif / bordas (\\%) \\\\\n\\midrule\n"
-                f"Sequencial & 1 & 1 & 1 & {t1:.2f} & 1,00 & 100\\% & 100 / 0 / 0 \\\\\n"
+                + f"Sequencial & 1 & 1 & 1 & {t1:.2f} & 1.00 & 100\\% & 100 / 0 / 0 \\\\\n".replace(".", ",")
                 + "\n".join(tex).replace(".", ",") + "\n\\bottomrule\n\\end{tabular}\n")
 
     try:
