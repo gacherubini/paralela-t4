@@ -1,0 +1,3 @@
+# Medições param pelo limite de iterações, com a verificação ativa
+
+Numa placa de 8192×8192 o Jacobi leva muito mais que milhares de iterações para o delta cair a 1e-6, o que daria horas de sequencial e um tempo que depende de quando a convergência acontece. Medimos 500 iterações (`-i 500`) com a tolerância de 1e-6 ainda verificada a cada iteração pelo `MPI_Allreduce`: o custo da fase de verificação entra na medição, todas as versões fazem exatamente o mesmo trabalho, e o sequencial fica em ~139 s. A parada por tolerância funciona e é testada no `teste.sh` (N=40, 1627 iterações iguais em todas as versões).

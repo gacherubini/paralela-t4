@@ -1,0 +1,3 @@
+# Jacobi (difusão de calor) em vez da ordenação do pseudocódigo
+
+O pseudocódigo do enunciado usa ordenação de um vetor grande como exemplo de fases paralelas, e o T3 já tinha um bubble sort pronto. Escolhemos o Jacobi porque o trabalho é para comparar MPI puro com híbrido: no Jacobi o processamento local é um laço de pontos independentes que o OpenMP divide sem sincronização (`parallel for` com `reduction(max)`), enquanto o bubble sort é sequencial por natureza e precisaria virar odd-even sort, com a troca de valores entre vizinhos serial. As três fases do modelo continuam iguais: atualizar a faixa, verificar a convergência com uma coletiva e trocar as linhas de borda com os vizinhos.
