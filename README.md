@@ -35,6 +35,7 @@ bit) e a mesma `soma` que o sequencial.
 | `job.sh` | Slurm, 4 nós exclusivos: make + teste + mapa + medir + analisar |
 | `analisar.py` | tabelas (`tabelas.txt`, `tab_escala.tex`) e gráficos (`grafico_escala`, `grafico_fases`; precisa de matplotlib) |
 | `relatorio/relatorio.tex` | relatório no formato da disciplina (pág. 1 texto, pág. 2 anexo, pág. 3+ código) |
+| `apresentacao_grupo20.pdf` | slides da apresentação em aula (escalabilidade forte, 13 slides) |
 
 ## Rodar no cluster
 
