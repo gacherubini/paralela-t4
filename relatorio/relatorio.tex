@@ -1,0 +1,186 @@
+% ============================================================================
+%  Relatorio Tecnico - Trabalho 4 de Programacao Paralela (Fases Paralelas,
+%  MPI puro x hibrido MPI/OpenMP)
+%  Formato exigido (mesmo do T1-T3):
+%    pag. 1  -> coluna DUPLA, margens 1cm, fonte 10, somente texto
+%    pag. 2  -> coluna SIMPLES: tabelas + graficos (anexo A)
+%    pag. 3+ -> coluna SIMPLES: codigo fonte
+%  Compilar a partir de relatorio/ (usa ../resultados/ e ../ para os fontes):
+%    tectonic relatorio.tex    ou    pdflatex relatorio.tex
+%  \pend{...} marca em VERMELHO o que depende dos numeros do cluster.
+%  Antes de entregar: grep pend relatorio.tex deve voltar so a definicao.
+%  Os numeros saem de resultados/tabelas.txt (python3 analisar.py).
+% ============================================================================
+\documentclass[10pt,a4paper,twocolumn]{article}
+
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[utf8]{inputenc}
+  \usepackage[T1]{fontenc}
+\fi
+\usepackage[brazil]{babel}
+\usepackage[margin=1cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{amsmath}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{2pt}
+\setlength{\columnsep}{6mm}
+\pagestyle{empty}
+\raggedbottom
+\makeatletter
+\renewcommand\section{\@startsection{section}{1}{0pt}%
+  {0.8ex plus .2ex minus .2ex}{0.3ex}{\normalsize\bfseries}}
+\makeatother
+
+\newcommand{\pend}[1]{\textcolor{red}{\textbf{[#1]}}}
+
+% Inclui o grafico/tabela se ja existir; senao deixa um aviso no lugar.
+\newcommand{\grafico}[2][\linewidth]{\IfFileExists{../resultados/#2.pdf}%
+  {\includegraphics[width=#1]{../resultados/#2.pdf}}%
+  {\pend{falta \detokenize{#2}.pdf: rodar python3 analisar.py}}}
+\newcommand{\tabela}[1]{\IfFileExists{../resultados/#1.tex}%
+  {\input{../resultados/#1.tex}}{\pend{falta \detokenize{#1}.tex: rodar python3 analisar.py}}}
+
+\lstdefinestyle{codigoC}{
+  language=C, basicstyle=\ttfamily\scriptsize, numbers=left,
+  numberstyle=\tiny\color{gray}, keywordstyle=\color{blue!70!black},
+  commentstyle=\itshape\color{green!40!black}, stringstyle=\color{red!60!black},
+  showstringspaces=false, breaklines=true, tabsize=4,
+  columns=fullflexible, lineskip=-1pt,
+  literate={á}{{\'a}}1 {ã}{{\~a}}1 {ç}{{\c{c}}}1 {ê}{{\^e}}1 {í}{{\'i}}1
+           {ó}{{\'o}}1 {ú}{{\'u}}1 {é}{{\'e}}1 {õ}{{\~o}}1 {à}{{\`a}}1
+           {×}{{$\times$}}1 {→}{{$\rightarrow$}}1 {−}{{$-$}}1 {°}{{$^\circ$}}1,
+  morekeywords={MPI_Init_thread,MPI_Sendrecv,MPI_Allreduce,MPI_Reduce,
+                MPI_Barrier,MPI_Abort,MPI_PROC_NULL,omp_get_max_threads}
+}
+
+\begin{document}
+
+% ============================ CABECALHO =====================================
+\twocolumn[
+{\centering
+  {\large\bfseries Difusão de Calor (Jacobi) no Modelo de Fases Paralelas:\\ MPI Puro × Híbrido MPI/OpenMP}\\[2pt]
+  {\small Trabalho 4 --- Programação Paralela --- Grupo 20 (conta LAD \texttt{cp32020})}\\[1pt]
+  {\small Gabriel Coelho \quad Gabriel Cherubini}\\[4pt]
+}]
+
+% ============================ TEXTO (pag. 1) =================================
+\section{Problema e adequação ao modelo}
+Uma placa de $N \times N$ pontos com a borda de cima a 100\,°C e as outras
+a 0\,°C. O método de Jacobi repete, para todo ponto interno,
+$u'_{i,j} = \tfrac14(u_{i-1,j} + u_{i+1,j} + u_{i,j-1} + u_{i,j+1})$ até a
+maior variação $\delta = \max|u' - u|$ ficar abaixo de uma tolerância. O
+problema encaixa nas três fases do modelo: cada processo atualiza a sua faixa
+de linhas (\emph{processamento local}), todos decidem juntos se $\delta$ já
+está abaixo da tolerância (\emph{verificação coletiva}) e, se não, trocam com
+os vizinhos de cima e de baixo as linhas de borda de que a próxima iteração
+precisa (\emph{troca para convergência}). Ao contrário da ordenação do
+pseudocódigo, todo o trabalho local é um laço de pontos independentes,
+que as threads OpenMP dividem sem sincronização.
+
+\section{Implementação: diretivas MPI e OpenMP}
+Um fonte (\texttt{jacobi.c}) gera as três versões: \texttt{gcc} dá o
+sequencial; \texttt{mpicc -DPARALELO}, o MPI puro; e o mesmo com
+\texttt{-fopenmp}, o híbrido. As $N$ linhas são divididas em faixas
+contíguas de $\lfloor N/np \rfloor$ ou $\lceil N/np \rceil$ linhas, geradas no
+próprio processo, cada uma com uma linha fantasma (\emph{halo}) acima e outra
+abaixo. Cada iteração: (1) \texttt{passo()} atualiza a faixa e devolve o
+$\delta$ local; (2) \texttt{MPI\_Allreduce(MPI\_MAX)} dá a todos o
+$\delta$ global, e todos param na mesma iteração. Ele faz o papel dos $np$
+\texttt{MPI\_Bcast} do pseudocódigo em uma coletiva de $\log_2 np$ etapas;
+(3) dois \texttt{MPI\_Sendrecv} trocam a primeira linha com o vizinho de cima
+e a última com o de baixo (\texttt{MPI\_PROC\_NULL} nas pontas). O
+\texttt{Sendrecv} evita o impasse de todos enviarem antes de receber.
+
+\textbf{Versão híbrida.} O modelo não muda: muda quem faz a fase 1. Um
+processo por nó (ou por socket) recebe uma faixa 16 (ou 8) vezes maior, e
+\texttt{\#pragma omp parallel for schedule(static) reduction(max:dmax)} divide
+as linhas entre as threads; a redução do OpenMP combina o $\delta$ das
+threads antes da redução do MPI. Só a thread principal chama MPI, fora das
+regiões paralelas (\texttt{MPI\_Init\_thread} com
+\texttt{MPI\_THREAD\_FUNNELED}). A inicialização usa o mesmo laço e o mesmo
+escalonamento, para que cada página de memória seja tocada primeiro pela
+thread que vai usá-la (\emph{first touch}) e fique no banco de memória do
+socket dela.
+
+\section{Carga e metodologia}
+$N = 8192$ (67\,M pontos, 2 matrizes de 0,5\,GB) e 500 iterações; a
+tolerância ($10^{-6}$) é verificada a cada iteração, mas não é atingida, de
+modo que todas as versões fazem o mesmo trabalho. Cada linha de borda tem
+64\,KiB. No híbrido com 4 processos, cada faixa tem 2048 linhas, ou 128 por
+thread com 16 threads: carga de sobra para dividir entre as threads.
+\pend{tempo do sequencial} Atlântica, 4 nós exclusivos (2$\times$ Xeon E5520
+por nó: 2 sockets $\times$ 4 núcleos $\times$ 2 HT), gcc 9.4.0 \texttt{-O2},
+Open MPI 4.1.1. MPI puro e híbrido são comparados com o mesmo total de
+núcleos e as mesmas CPUs: com 8, um rank (ou thread) por socket; com 16, dois;
+com 32, todos os núcleos; com 64, também o HT. Processos e threads ficam
+fixos (\texttt{--map-by ppr}, \texttt{OMP\_PLACES}/\texttt{OMP\_PROC\_BIND};
+mapa conferido com \texttt{-m}). Tempo do laço principal, mediana de 3;
+$S = T_{seq}/T$ e $E = S/(\text{processos} \times \text{threads})$. O
+resultado (iterações, $\delta$ bit a bit e soma das temperaturas) é igual ao
+sequencial em todas as execuções.
+
+\section{Escalabilidade forte}
+\pend{Tab.~1 e Fig.~1: S e E de MPI puro e híbrido em 4, 8, 16, 32 e 64
+núcleos; onde as curvas se separam; ganho ou perda com o HT}
+
+\section{Análise: por que MPI puro e híbrido diferem}
+\pend{Fig.~2: fração do tempo em cálculo, Allreduce e bordas. Pontos a
+cobrir: (a) número de mensagens por iteração, $2(np{-}1)$: 126 no MPI com
+64 contra 6 no híbrido 4$\times$16; (b) o Jacobi é limitado pela banda de
+memória (16--24\,B por ponto), então acima de 2 núcleos por socket o ganho
+cai nas duas versões; (c) o tempo no Allreduce inclui a espera pelo processo
+mais lento (desbalanceamento); (d) 1 processo por nó $\times$ 1 por socket
+(NUMA)}
+
+\section{Uso de IA}
+% CONFERIR com o grupo antes de entregar: descrever exatamente o que foi feito
+% pela ferramenta e o que foi feito por cada integrante.
+Usamos o \textbf{Claude Code} (Anthropic, modelo Claude Opus 5.5).
+\emph{Código}: escreveu o \texttt{jacobi.c} (as três versões), os testes de
+corretude, os scripts de medição e análise e o mapeamento de processos e
+threads, que conferiu num simulador de topologia do Open MPI.
+\emph{Relatório}: redigiu as Seç.~1--3 e o Anexo A. \pend{o que o grupo
+escreveu/revisou}. O grupo escolheu o problema, rodou os experimentos no
+cluster e conferiu os resultados e o texto.
+
+\section{Conclusão}
+\pend{qual versão escala melhor, por quê e quando o híbrido compensa}
+
+% ============================ ANEXO (pag. 2) ================================
+\onecolumn
+\section*{\large Anexo A --- Tabelas e gráficos}
+{\small
+\begin{center}
+\textbf{Tabela 1.} Escalabilidade forte ($N = 8192$, 500 iterações): tempo,
+speed-up $S$, eficiência $E$ e fração do tempo médio por fase
+(cálculo / verificação / troca de bordas).\\[2pt]
+\tabela{tab_escala}
+
+\vspace{6pt}
+\grafico[0.9\linewidth]{grafico_escala}\\[2pt]
+\textbf{Figura 1.} Escalabilidade forte de MPI puro e híbrido; tracejado = ideal;
+faixa bege = região com HT (64 = 4 nós $\times$ 16 hardware threads).
+
+\vspace{6pt}
+\grafico[0.9\linewidth]{grafico_fases}\\[2pt]
+\textbf{Figura 2.} Fração do tempo médio por processo em cada fase
+($p \times t$ = processos $\times$ threads; H-nó = 1 processo por nó, H-sk = 1 por socket).
+\end{center}
+}
+
+% ============================ CODIGO (pag. 3+) ==============================
+\newpage
+\section*{\large Anexo B --- Código}
+\lstinputlisting[style=codigoC]{../jacobi.c}
+\lstinputlisting[style=codigoC,language=make]{../Makefile}
+\lstinputlisting[style=codigoC,language=bash]{../teste.sh}
+\lstinputlisting[style=codigoC,language=bash]{../medir.sh}
+\lstinputlisting[style=codigoC,language=bash]{../job.sh}
+\lstinputlisting[style=codigoC,language=Python]{../analisar.py}
+
+\end{document}
